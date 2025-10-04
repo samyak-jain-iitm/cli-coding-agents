@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 try:
     genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
     # FINAL CORRECTION: Using the explicitly versioned 'gemini-1.0-pro' model for maximum compatibility.
-    model = genai.GenerativeModel('gemini-1.0-pro')
+    model = genai.GenerativeModel('gemini-2.5-pro')
 except KeyError:
     logger.error("GOOGLE_API_KEY not found in environment variables.")
     model = None
@@ -97,4 +97,5 @@ async def run_task(q: str):
     }
     
     return response_data
+
 
