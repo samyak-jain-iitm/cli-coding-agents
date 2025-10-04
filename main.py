@@ -1,68 +1,98 @@
 import subprocess
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import json
+import logging
+import google.generativeai as genai
+
+# --- Configure Logging and Google AI ---
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# The client will automatically look for the GOOGLE_API_KEY environment variable
+try:
+    genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
+    model = genai.GenerativeModel('gemini-1.5-flash-latest') # Use a fast and capable model
+except KeyError:
+    logger.error("GOOGLE_API_KEY not found in environment variables.")
+    model = None
+except Exception as e:
+    logger.error(f"Error configuring Google AI: {e}")
+    model = None
 
 # Initialize the FastAPI app
 app = FastAPI()
 
-# Set up CORS to allow all cross-origin GET requests
+# Set up CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["GET"], # Allows only GET method
+    allow_methods=["GET"],
     allow_headers=["*"],
 )
 
 @app.get("/task")
 async def run_task(q: str):
     """
-    Receives a task description, forwards it to the GitHub Copilot CLI,
-    executes the suggested shell command, and returns the output.
+    Receives a task, uses the Google Gemini API to generate a shell command,
+    executes it safely, and returns the output.
     """
-    agent_name = "copilot-cli"
+    agent_name = "gemini-1.5-flash"
     user_email = "25ds1000058@ds.study.iitm.ac.in"
-    
-    # This is the command that will be executed in the shell.
-    # It asks Copilot CLI to suggest a shell command for the query `q`
-    # and then immediately executes that suggestion using a pipe `|` to `sh`.
-    command = f'gh copilot suggest -t shell "{q}" | sh'
-    
     agent_output = ""
-    try:
-        # Execute the command and capture the output
-        result = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=120  # Add a timeout of 2 minutes
-        )
+    command_to_run = ""
 
-        # Clean up the output
-        if result.returncode == 0:
-            # The stdout contains the result of the executed command
-            agent_output = result.stdout.strip()
-        else:
-            # If there was an error, capture it
-            agent_output = f"Error: {result.stderr.strip()}"
+    if not model:
+        agent_output = "Error: The generative model is not configured. Check the server's GOOGLE_API_KEY."
+    else:
+        try:
+            # 1. Ask the Gemini API to generate a shell command
+            # This prompt is carefully engineered to request ONLY a shell command.
+            prompt = f"Based on the following request, provide a single, runnable shell command and nothing else. Do not add explanations, markdown, or any other text. Request: '{q}'"
+            
+            response = model.generate_content(prompt)
+            
+            # Extract the pure command from the API response
+            command_to_run = response.text.strip()
+            # Clean up potential markdown code fences (` ```bash ... ``` `)
+            if command_to_run.startswith("```"):
+                command_to_run = command_to_run.split('\n')[1].strip() if len(command_to_run.split('\n')) > 1 else ""
+                if command_to_run.endswith("```"):
+                     command_to_run = command_to_run[:-3].strip()
 
-    except subprocess.TimeoutExpired:
-        agent_output = "Error: The command timed out after 120 seconds."
-    except Exception as e:
-        agent_output = f"An unexpected error occurred: {str(e)}"
+
+            logger.info(f"Generated command: {command_to_run}")
+
+            # 2. Execute the generated command
+            if command_to_run:
+                result = subprocess.run(
+                    command_to_run,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=120
+                )
+                
+                if result.returncode == 0:
+                    agent_output = result.stdout.strip()
+                else:
+                    # Combine stdout and stderr for more context on errors
+                    agent_output = f"Error executing command.\nSTDOUT:\n{result.stdout.strip()}\n\nSTDERR:\n{result.stderr.strip()}"
+            else:
+                agent_output = "Error: The model did not return a valid command."
+
+        except Exception as e:
+            logger.error(f"An unexpected error occurred: {e}")
+            agent_output = f"An unexpected error occurred: {str(e)}"
 
     # Construct the final JSON response
     response_data = {
         "task": q,
         "agent": agent_name,
+        "generated_command": command_to_run, # Added for better debugging
         "output": agent_output,
         "email": user_email
     }
     
     return response_data
-
-# Example of how to run this app locally:
-
-# uvicorn main:app --reload
