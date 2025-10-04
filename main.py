@@ -22,7 +22,7 @@ async def run_task(q: str):
     executes the suggested shell command, and returns the output.
     """
     agent_name = "copilot-cli"
-    user_email = "25ds100005@ds.study.iitm.ac.in"
+    user_email = "25ds1000058@ds.study.iitm.ac.in"
     
     # This is the command that will be executed in the shell.
     # It asks Copilot CLI to suggest a shell command for the query `q`
@@ -64,4 +64,5 @@ async def run_task(q: str):
     return response_data
 
 # Example of how to run this app locally:
+
 # uvicorn main:app --reload
