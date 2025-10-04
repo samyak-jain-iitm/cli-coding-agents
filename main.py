@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 # The client will automatically look for the GOOGLE_API_KEY environment variable
 try:
     genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
-    # CORRECTED: Switched to the universally stable 'gemini-pro' model
-    model = genai.GenerativeModel('gemini-pro')
+    # FINAL CORRECTION: Using the explicitly versioned 'gemini-1.0-pro' model for maximum compatibility.
+    model = genai.GenerativeModel('gemini-1.0-pro')
 except KeyError:
     logger.error("GOOGLE_API_KEY not found in environment variables.")
     model = None
@@ -39,8 +39,8 @@ async def run_task(q: str):
     Receives a task, uses the Google Gemini API to generate a shell command,
     executes it safely, and returns the output.
     """
-    # Updated agent name to reflect the model change
-    agent_name = "gemini-pro"
+    # Updated agent name to reflect the specific model version
+    agent_name = "gemini-1.0-pro"
     user_email = "25ds1000058@ds.study.iitm.ac.in"
     agent_output = ""
     command_to_run = ""
@@ -54,14 +54,14 @@ async def run_task(q: str):
             
             response = model.generate_content(prompt)
             
-            # Extract the pure command from the API response and clean it
+            # Extract and clean the command from the API response
             command_to_run = response.text.strip()
             if command_to_run.startswith("```"):
-                lines = command_to_run.split('\n')
-                if len(lines) > 1:
-                    command_to_run = '\n'.join(lines[1:-1]).strip()
-                else: # Handle case of ```command``` on one line
-                    command_to_run = command_to_run.strip('`').strip()
+                # More robustly remove markdown fences
+                command_to_run = command_to_run.splitlines()[1:-1]
+                command_to_run = "\n".join(command_to_run).strip()
+            # Also handle simple backticks
+            command_to_run = command_to_run.strip('`').strip()
 
 
             logger.info(f"Generated command: {command_to_run}")
